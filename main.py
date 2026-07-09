@@ -230,17 +230,46 @@ async def start_cmd(client: Client, message: Message):
     )
 
 
-@call_py.on_stream_end()
-async def on_stream_end(client: PyTgCalls, update):
-    chat_id = update.chat_id
-    q.pop_next(chat_id)  # remove the song that just finished
-    await play_next(chat_id)
+def register_stream_end_handler():
+    """
+    Different py-tgcalls versions expose the "song finished" event under
+    different names/APIs. Try the known ones so the bot keeps working
+    across versions. If none are found, auto-advancing the queue is
+    disabled, but /play, /fplay, /skip, /stop etc. still work normally --
+    you'd just need to run /skip manually when a song ends.
+    """
+    if hasattr(call_py, "on_stream_end"):
+        @call_py.on_stream_end()
+        async def _on_stream_end(client, update):
+            chat_id = update.chat_id
+            q.pop_next(chat_id)
+            await play_next(chat_id)
+        logger.info("Registered on_stream_end handler (legacy API).")
+        return
+
+    if hasattr(call_py, "on_update"):
+        @call_py.on_update()
+        async def _on_update(client, update):
+            # Only react to updates that look like a "stream ended" event
+            if "streamend" in type(update).__name__.lower():
+                chat_id = getattr(update, "chat_id", None)
+                if chat_id is not None:
+                    q.pop_next(chat_id)
+                    await play_next(chat_id)
+        logger.info("Registered on_update handler for stream-end events (new API).")
+        return
+
+    logger.warning(
+        "Could not find a stream-end event handler on this py-tgcalls version. "
+        "Auto-advancing the queue is disabled -- use /skip manually when a song ends."
+    )
 
 
 async def main():
     await user_app.start()
     await bot_app.start()
     await call_py.start()
+    register_stream_end_handler()
     logger.info("Bot and assistant are both up. Music bot is ready!")
     await asyncio.Event().wait()  # keep running forever
 
