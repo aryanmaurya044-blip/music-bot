@@ -1,0 +1,23 @@
+# Environment variables (contains secrets - NEVER commit this)
+.env
+
+# Downloaded audio files
+downloads/
+*.mp3
+*.webm
+*.m4a
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Pyrogram session files
+*.session
+*.session-journal
+
+# OS files
+.DS_Store
+Thumbs.db
