@@ -22,7 +22,12 @@ logger = logging.getLogger(__name__)
 bot_app = Client("music_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 user_app = Client("assistant", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-call_py = PyTgCalls(user_app)
+# IMPORTANT: PyTgCalls must be created *after* the asyncio event loop that will
+# actually run the bot has started (inside main()), not here at module import
+# time. Creating it too early binds its internals to a different event loop
+# than the one asyncio.run() creates, causing "attached to a different loop"
+# errors on Python 3.13. We declare it as None here and set it inside main().
+call_py: PyTgCalls = None
 
 
 async def play_next(chat_id: int):
@@ -266,8 +271,10 @@ def register_stream_end_handler():
 
 
 async def main():
+    global call_py
     await user_app.start()
     await bot_app.start()
+    call_py = PyTgCalls(user_app)
     await call_py.start()
     register_stream_end_handler()
     logger.info("Bot and assistant are both up. Music bot is ready!")
