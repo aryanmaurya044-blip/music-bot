@@ -16,17 +16,28 @@ from helpers.auth import require_permission, add_authorized, remove_authorized
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# IMPORTANT (Python 3.13 fix):
+# We explicitly create the event loop *before* creating any Client/PyTgCalls
+# objects, and set it as the current loop. Pyrogram's Client grabs "the
+# current event loop" as soon as it's constructed. If we let asyncio.run()
+# create its own loop later, it won't match the loop the clients grabbed at
+# import time, causing "Task ... attached to a different loop" errors.
+# By creating the loop first and running everything on that same loop
+# (via loop.run_until_complete instead of asyncio.run), everything stays
+# consistent.
+# ---------------------------------------------------------------------------
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 # ---- Two clients are needed ----
 # 1) bot_app  -> the normal bot that listens for commands (@BotFather token)
 # 2) user_app -> assistant/userbot account that actually joins the VC and streams
 bot_app = Client("music_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 user_app = Client("assistant", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
 
-# IMPORTANT: PyTgCalls must be created *after* the asyncio event loop that will
-# actually run the bot has started (inside main()), not here at module import
-# time. Creating it too early binds its internals to a different event loop
-# than the one asyncio.run() creates, causing "attached to a different loop"
-# errors on Python 3.13. We declare it as None here and set it inside main().
+# PyTgCalls also gets created on this same loop, but lazily inside main()
+# (after the clients are started), which is the safest point to create it.
 call_py: PyTgCalls = None
 
 
@@ -273,7 +284,9 @@ def register_stream_end_handler():
 async def main():
     global call_py
     await user_app.start()
+    logger.info("Assistant/userbot account started.")
     await bot_app.start()
+    logger.info("Bot account started.")
     call_py = PyTgCalls(user_app)
     await call_py.start()
     register_stream_end_handler()
@@ -282,4 +295,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop.run_until_complete(main())
